@@ -1,5 +1,5 @@
 {
-  "name": "WAINEX — Workshop AI Assistant (Test)",
+  "name": "WAINEX — Workshop AI Assistant (PWA)",
   "short_name": "WAINEX",
   "start_url": ".",
   "display": "standalone",

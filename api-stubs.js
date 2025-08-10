@@ -1,5 +1,5 @@
 
-// WAINEX API Stubs — replace with real HTTP calls
+// WAINEX API Stubs — to be replaced with real HTTP calls
 export async function apSearchPart(query) {
   await new Promise(r => setTimeout(r, 200));
   return [{supplier:'Auto Partner', code:'AP-'+Math.floor(Math.random()*10000), name:query, price: 99+Math.floor(Math.random()*200)}];

@@ -3,26 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WAINEX — Workshop AI Assistant (Test)</title>
+  <title>WAINEX — Workshop AI Assistant (PWA)</title>
   <meta name="theme-color" content="#0b1020">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://unpkg.com">
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* Subtle scrollbars */
     * { scrollbar-width: thin; scrollbar-color: #6b7280 transparent; }
     *::-webkit-scrollbar { height: 8px; width: 8px; }
     *::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 9999px; }
     *::-webkit-scrollbar-track { background: transparent; }
     html, body, #root { height: 100%; }
   </style>
-
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
 </head>
 <body class="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900 antialiased selection:bg-purple-700/40 selection:text-white">
   <div id="root" class="min-h-screen"></div>
@@ -30,15 +26,40 @@
   <!-- React 18 + ReactDOM -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel (only for this test build; production should use Vite) -->
+  <!-- Babel (test only) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Lucide (icons) -->
+  <!-- Lucide -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <script type="text/babel">
-    const { useState, useEffect, useMemo, useRef, useCallback, useReducer } = React;
+  <script>
+    // PWA service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+      });
+    }
+    // PWA install prompt
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      const btn = document.getElementById('installBtn');
+      if (btn) btn.classList.remove('hidden');
+    });
+    async function triggerInstall() {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      const btn = document.getElementById('installBtn');
+      if (btn) btn.classList.add('hidden');
+    }
+  </script>
 
-    // -------- Utility: Debounce --------
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    // Debounce
     function useDebouncedCallback(fn, delay = 300) {
       const t = useRef();
       return useCallback((...args) => {
@@ -47,14 +68,13 @@
       }, [fn, delay]);
     }
 
-    // -------- Utility: RAF Clock (smooth, battery-friendly) --------
+    // RAF clock
     function useRafTime() {
       const [now, setNow] = useState(() => new Date());
       useEffect(() => {
         let raf;
         const tick = () => {
           const d = new Date();
-          // Update at second precision
           if (d.getSeconds() !== now.getSeconds()) setNow(d);
           raf = requestAnimationFrame(tick);
         };
@@ -64,21 +84,18 @@
       return now;
     }
 
-    // -------- Web Worker (Robo Agent) --------
+    // Worker
     function createAgentWorker() {
       const code = `
         self.addEventListener('message', async (e) => {
           const { type, payload, id } = e.data || {};
           const respond = (data) => self.postMessage({ id, ...data });
-          // cheap deterministic pseudo AI for demo
           const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
           if (type === 'VIN_ANALYZE') {
             await sleep(350 + Math.random()*300);
             const vin = (payload?.vin || '').toUpperCase();
             const ok = /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
             if (!ok) return respond({ type: 'ERROR', error: 'Nieprawidłowy VIN' });
-            // Mock decode results
             const brands = ['BMW','Audi','VW','Renault','Toyota','Skoda'];
             const models = ['X5','A4','Golf','Clio','Corolla','Octavia'];
             const year = 2011 + Math.floor(Math.random()*13);
@@ -94,17 +111,15 @@
               ]
             }});
           }
-
           if (type === 'INVENTORY_FORECAST') {
             await sleep(300 + Math.random()*250);
             const items = ['Filtr oleju','Klocki','Pasek rozrządu','Płyn chłodniczy','Świece'];
             respond({ type: 'FORECAST_RESULT', result: items.map((n,i)=> ({
               name: n,
-              change: Math.round((Math.random()*40 - 10)*10)/10, // -10%..+30%
+              change: Math.round((Math.random()*40 - 10)*10)/10,
               restockHint: Math.random() > 0.6
             }))});
           }
-
           if (type === 'ORDER_OPTIMIZE') {
             await sleep(400 + Math.random()*300);
             const parts = payload?.parts || [];
@@ -117,55 +132,40 @@
             }));
             respond({ type: 'ORDER_PLAN', result: { parts: best, savings: Math.round(Math.random()*120) } });
           }
-
           if (type === 'CHAT') {
             await sleep(250 + Math.random()*250);
             const msg = (payload?.text || '').toLowerCase();
             if (msg.includes('vin') || msg.includes('części')) {
-              return respond({ type: 'CHAT_REPLY', text:
-                'Znalazłem potencjalne części do wskazanego VIN. Mogę utworzyć zamówienie lub porównać dostawców. Co wybierasz?' });
+              return respond({ type: 'CHAT_REPLY', text:'Znalazłem potencjalne części do wskazanego VIN. Mogę utworzyć zamówienie lub porównać dostawców. Co wybierasz?' });
             }
             if (msg.includes('zamów')) {
-              return respond({ type: 'CHAT_REPLY', text:
-                'Tworzę szkic zamówienia… gotowe. Sprawdź koszyk i potwierdź wysyłkę.' });
+              return respond({ type: 'CHAT_REPLY', text:'Tworzę szkic zamówienia… gotowe. Sprawdź koszyk i potwierdź wysyłkę.' });
             }
             if (msg.includes('magazyn') || msg.includes('stan')) {
-              return respond({ type: 'CHAT_REPLY', text:
-                'Magazyn: 1247 pozycji dostępnych, 23 niskie stany, 5 braków. Zasugerować uzupełnienia?' });
+              return respond({ type: 'CHAT_REPLY', text:'Magazyn: 1247 dostępnych, 23 niskie stany, 5 braków. Zasugerować uzupełnienia?' });
             }
-            return respond({ type: 'CHAT_REPLY', text:
-              'Jestem gotów. Zapytaj o VIN, zamówienia, magazyn lub klientów.' });
+            return respond({ type: 'CHAT_REPLY', text:'Jestem gotów. Zapytaj o VIN, zamówienia, magazyn lub klientów.' });
           }
         });
       `;
       const blob = new Blob([code], { type: 'application/javascript' });
       return new Worker(URL.createObjectURL(blob));
     }
-
-    // Agent hook (request/response correlation by id)
     function useAgent() {
       const workerRef = useRef(null);
       const idRef = useRef(0);
       const callbacks = useRef(new Map());
-
       useEffect(() => {
         workerRef.current = createAgentWorker();
         const w = workerRef.current;
         const onMsg = (e) => {
           const { id, ...rest } = e.data || {};
           const cb = callbacks.current.get(id);
-          if (cb) {
-            callbacks.current.delete(id);
-            cb(rest);
-          }
+          if (cb) { callbacks.current.delete(id); cb(rest); }
         };
         w.addEventListener('message', onMsg);
-        return () => {
-          w.removeEventListener('message', onMsg);
-          w.terminate();
-        };
+        return () => { w.removeEventListener('message', onMsg); w.terminate(); };
       }, []);
-
       const call = useCallback((type, payload) => {
         const id = ++idRef.current;
         return new Promise((resolve) => {
@@ -173,7 +173,6 @@
           workerRef.current.postMessage({ id, type, payload });
         });
       }, []);
-
       return {
         analyzeVIN: (vin) => call('VIN_ANALYZE', { vin }),
         forecastInventory: () => call('INVENTORY_FORECAST'),
@@ -182,23 +181,17 @@
       };
     }
 
-    // -------- Virtualized List (simple) --------
+    // Virtual list
     function VirtualList({ items, rowHeight = 72, renderRow }) {
-      const containerRef = useRef(null);
       const [scrollTop, setScrollTop] = useState(0);
-      const onScroll = useCallback((e) => setScrollTop(e.currentTarget.scrollTop), []);
       const height = 420;
       const total = items.length * rowHeight;
       const start = Math.max(0, Math.floor(scrollTop / rowHeight) - 4);
       const end = Math.min(items.length, start + Math.ceil(height / rowHeight) + 8);
       const slice = items.slice(start, end);
       return (
-        <div
-          ref={containerRef}
-          className="overflow-auto rounded-xl border border-gray-700/50 bg-gray-800/50"
-          style={{ height }}
-          onScroll={onScroll}
-        >
+        <div className="overflow-auto rounded-xl border border-gray-700/50 bg-gray-800/50" style={{ height }}
+             onScroll={(e)=>setScrollTop(e.currentTarget.scrollTop)}>
           <div style={{ height: total, position: 'relative' }}>
             {slice.map((item, i) => {
               const index = start + i;
@@ -213,89 +206,150 @@
       );
     }
 
-    // -------- App --------
     function App() {
       const now = useRafTime();
       const agent = useAgent();
       const [active, setActive] = useState('dashboard');
       const [aiOnline] = useState(true);
 
-      // Orders (mock, persisted)
+      // Config & Reminders
+      const defaultCfg = { reminders: true, suppliers: { autoPartner: '11:00', mekoNomen: '10:00' } };
+      const [cfg, setCfg] = useState(() => {
+        try { return { ...defaultCfg, ...(JSON.parse(localStorage.getItem('wainex_cfg_v1')||'{}')) }; } catch { return defaultCfg; }
+      });
+      useEffect(()=> localStorage.setItem('wainex_cfg_v1', JSON.stringify(cfg)), [cfg]);
+      function timeToTodayDate(tstr) {
+        const [hh,mm] = (tstr||'').split(':').map(n=>parseInt(n||'0',10));
+        const d = new Date(); d.setHours(hh||0, mm||0, 0, 0); return d;
+      }
+      const notify = (msg) => {
+        if (window.Notification && Notification.permission === 'granted') new Notification('WAINEX', { body: msg });
+      };
+      useEffect(()=>{
+        if (!cfg.reminders) return;
+        let iv = setInterval(()=>{
+          const now = new Date();
+          const mins = (d)=> Math.floor((d - now)/60000);
+          const ap = timeToTodayDate(cfg.suppliers.autoPartner);
+          const mk = timeToTodayDate(cfg.suppliers.mekoNomen);
+          [ ['Auto Partner', ap], ['MekoNomen', mk] ].forEach(([name, d])=>{
+            const m = mins(d);
+            if (m === 5) {
+              const pendingWithParts = orders.some(o => o.status!=='done' && (o.parts||[]).length>0);
+              const txt = `Za 5 min zamknięcie zamówień: ${name}. ${pendingWithParts ? 'Wysłać zamówienie?' : 'Koszyk pusty.'}`;
+              notify(txt);
+              setChat((c)=>[...c, { type:'ai', ts: Date.now(), content: '⏰ ' + txt }]);
+            }
+          });
+        }, 60*1000);
+        return ()=> clearInterval(iv);
+      }, [cfg, orders]);
+      useEffect(()=>{
+        if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(()=>{});
+      }, []);
+
+      // Orders
       const [orders, setOrders] = useState(() => {
         try {
           const saved = localStorage.getItem('wainex_orders_v1');
           return saved ? JSON.parse(saved) : [
-            {
-              id: 'ORD-2024-001',
-              client: { name: 'AutoSerwis Kowalski', phone: '+48 123 456 789' },
-              car: { brand: 'BMW', model: 'X5', year: 2020, vin: 'WBA3A5G50ENS12345' },
-              status: 'pending',
-              total: 2450,
-              parts: [
-                { name: 'Filtr oleju', code: 'HU816x', price: 45, qty: 2, supplier: 'Mann Filter' },
-                { name: 'Klocki hamulcowe', code: 'GDB1330', price: 280, qty: 1, supplier: 'Ferodo' },
-                { name: 'Amortyzator', code: 'B46-1234', price: 420, qty: 2, supplier: 'Bilstein' }
+            { id:'ORD-2024-001', client:{name:'AutoSerwis Kowalski', phone:'+48 123 456 789'},
+              car:{brand:'BMW', model:'X5', year:2020, vin:'WBA3A5G50ENS12345'},
+              status:'pending', total:2450,
+              parts:[
+                { name:'Filtr oleju', code:'HU816x', price:45, qty:2, supplier:'Mann Filter' },
+                { name:'Klocki hamulcowe', code:'GDB1330', price:280, qty:1, supplier:'Ferodo' },
+                { name:'Amortyzator', code:'B46-1234', price:420, qty:2, supplier:'Bilstein' }
               ],
-              createdAt: Date.now() - 3600000,
-              aiRecommendations: ['Sprawdź tarcze hamulcowe', 'Zalecana wymiana oleju za 2000 km']
+              createdAt: Date.now()-3600000, aiRecommendations:['Sprawdź tarcze', 'Wymiana oleju za 2000 km']
             },
-            {
-              id: 'ORD-2024-002',
-              client: { name: 'Mechanik Nowak', phone: '+48 987 654 321' },
-              car: { brand: 'Audi', model: 'A4', year: 2019, vin: 'WVWZZZ1JZYW123456' },
-              status: 'processing',
-              total: 1890,
-              parts: [
-                { name: 'Pasek rozrządu', code: 'CT909', price: 85, qty: 1, supplier: 'ContiTech' },
-                { name: 'Pompa wody', code: 'WP259', price: 165, qty: 1, supplier: 'Graf' }
+            { id:'ORD-2024-002', client:{name:'Mechanik Nowak', phone:'+48 987 654 321'},
+              car:{brand:'Audi', model:'A4', year:2019, vin:'WVWZZZ1JZYW123456'},
+              status:'processing', total:1890,
+              parts:[
+                { name:'Pasek rozrządu', code:'CT909', price:85, qty:1, supplier:'ContiTech' },
+                { name:'Pompa wody', code:'WP259', price:165, qty:1, supplier:'Graf' }
               ],
-              createdAt: Date.now() - 7200000,
-              aiRecommendations: ['Wymień napinacz paska', 'Sprawdź płyn chłodniczy']
+              createdAt: Date.now()-7200000, aiRecommendations:['Wymień napinacz', 'Sprawdź płyn chłodniczy']
             }
           ];
         } catch { return []; }
       });
-      useEffect(() => {
-        localStorage.setItem('wainex_orders_v1', JSON.stringify(orders));
-      }, [orders]);
+      useEffect(()=> localStorage.setItem('wainex_orders_v1', JSON.stringify(orders)), [orders]);
 
       // Chat
       const [chat, setChat] = useState([]);
       const [msg, setMsg] = useState('');
       const chatEndRef = useRef(null);
-      useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [chat]);
-
+      useEffect(()=>{ chatEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [chat]);
       const sendMsg = async (text) => {
-        const content = text.trim();
-        if (!content) return;
+        const content = text.trim(); if (!content) return;
         setChat((c) => [...c, { type:'user', content, ts: Date.now() }]);
         const { text: reply } = await agent.chat(content);
         setChat((c) => [...c, { type:'ai', content: reply, ts: Date.now() }]);
       };
-
-      const quick = [
-        'Sprawdź VIN: WBA3A5G50ENS12345',
-        'Zamów części do BMW X5',
-        'Stan magazynu filtrów',
-        'Kontakt z klientem Kowalski',
-      ];
+      const quick = ['Sprawdź VIN: WBA3A5G50ENS12345','Zamów części do BMW X5','Stan magazynu filtrów','Kontakt z klientem Kowalski'];
 
       // VIN
       const [vin, setVin] = useState('');
       const [vinResult, setVinResult] = useState(null);
       const [vinError, setVinError] = useState('');
+      const [scanActive, setScanActive] = useState(false);
+      const videoRef = useRef(null);
+      const [scanResult, setScanResult] = useState('');
       const onVIN = async () => {
         setVinError(''); setVinResult(null);
         const res = await agent.analyzeVIN(vin);
         if (res.type === 'ERROR') setVinError(res.error);
         if (res.type === 'VIN_RESULT') setVinResult(res.result);
       };
+      const startScan = async () => {
+        try {
+          if (!('BarcodeDetector' in window)) {
+            alert('Brak wsparcia BarcodeDetector. Spróbuj w Chrome/Edge.');
+            return;
+          }
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          setScanActive(true);
+          const detector = new BarcodeDetector({ formats: ['ean_13','code_128','qr_code','ean_8','upc_a'] });
+          let stop = false;
+          const loop = async () => {
+            if (stop) return;
+            try {
+              const bm = await createImageBitmap(videoRef.current);
+              const codes = await detector.detect(bm);
+              if (codes && codes[0]) {
+                setScanResult(codes[0].rawValue || '');
+                stop = true;
+                const tracks = stream.getTracks(); tracks.forEach(t=>t.stop());
+                setScanActive(false);
+              }
+            } catch {}
+            requestAnimationFrame(loop);
+          };
+          loop();
+        } catch(e){ alert('Nie udało się uruchomić kamery.'); }
+      };
+
+      // Export / Import
+      const exportJSON = () => {
+        const blob = new Blob([JSON.stringify(orders, null, 2)], { type:'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'wainex-orders.json'; a.click(); URL.revokeObjectURL(url);
+      };
+      const importJSON = (file) => {
+        const r = new FileReader();
+        r.onload = () => { try { const data = JSON.parse(r.result); if (Array.isArray(data)) setOrders(data); } catch { alert('Błąd importu JSON'); } };
+        r.readAsText(file);
+      };
 
       // Forecast (sidebar)
       const [forecast, setForecast] = useState([]);
       useEffect(() => { agent.forecastInventory().then((r) => setForecast(r.result || [])); }, []);
 
-      // Order optimization
+      // Optimize order
       const optimizeOrder = async (order) => {
         const res = await agent.optimizeOrder(order.parts.map(p => ({ ...p })));
         if (res.type === 'ORDER_PLAN') {
@@ -303,14 +357,12 @@
           const newTotal = parts.reduce((s,p)=> s + (p.price * (p.qty || 1)), 0);
           const updated = orders.map(o => o.id === order.id ? ({ ...o, total: newTotal, parts }) : o);
           setOrders(updated);
-          setChat((c)=>[...c, { type:'ai', ts: Date.now(), content: `Zoptymalizowano dostawców dla ${order.id}. Szacunkowa oszczędność: ${res.result.savings} zł.` }]);
+          setChat((c)=>[...c, { type:'ai', ts: Date.now(), content: `Zoptymalizowano dostawców dla ${order.id}. Oszczędność: ${res.result.savings} zł.` }]);
         }
       };
 
-      // Icons (lucide) init after mount / route change
-      useEffect(() => { lucide.createIcons(); }, [active]);
+      useEffect(() => { lucide.createIcons(); }, [active, orders, vinResult, scanActive]);
 
-      // UI helpers
       const StatCard = ({ label, value, change, icon }) => (
         <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 hover:border-gray-600/50 transition-all duration-300 shadow-lg hover:shadow-xl">
           <div className="flex items-center justify-between mb-4">
@@ -326,7 +378,6 @@
 
       return (
         <div className="min-h-screen backdrop-blur-sm">
-          {/* Header */}
           <header className="bg-gray-900/80 backdrop-blur-sm border-b border-gray-700/50 px-6 md:px-8 py-4 shadow-lg sticky top-0 z-40">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -338,10 +389,11 @@
                 </div>
                 <div>
                   <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">WAINEX — Workshop AI Assistant</h1>
-                  <p className="text-sm text-gray-400">Inteligentny system zarządzania warsztatem • v2.1 (Test)</p>
+                  <p className="text-sm text-gray-400">Inteligentny system zarządzania warsztatem • v2.2 (PWA)</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <button id="installBtn" onclick="triggerInstall()" class="hidden px-3 py-1.5 rounded-lg bg-green-600/20 border border-green-500/40 text-green-200 hover:bg-green-600/30 transition" title="Zainstaluj PWA">Instaluj</button>
                 <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg px-3 py-1.5">
                   <div className="flex items-center gap-2 text-sm text-gray-300">
                     <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
@@ -351,14 +403,13 @@
                 <button className="p-2 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/50 rounded-lg transition-colors" title="Powiadomienia">
                   <i data-lucide="bell" className="w-5 h-5 text-gray-400"></i>
                 </button>
-                <button className="p-2 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/50 rounded-lg transition-colors" title="Ustawienia">
+                <button onClick={()=>setActive('settings')} className="p-2 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/50 rounded-lg transition-colors" title="Ustawienia">
                   <i data-lucide="settings" className="w-5 h-5 text-gray-400"></i>
                 </button>
               </div>
             </div>
           </header>
 
-          {/* Tabs */}
           <div className="max-w-7xl mx-auto px-6 md:px-8 pt-6">
             <div className="flex flex-wrap gap-2">
               {[
@@ -366,10 +417,9 @@
                 ['ai-chat','AI Chat','message-square'],
                 ['orders','Zamówienia','shopping-cart'],
                 ['vin','Analiza VIN','search'],
+                ['settings','Ustawienia','settings'],
               ].map(([id,label,icon]) => (
-                <button
-                  key={id}
-                  onClick={()=>setActive(id)}
+                <button key={id} onClick={()=>setActive(id)}
                   className={"inline-flex items-center gap-2 px-4 py-2 rounded-xl border transition-all " +
                     (active===id ? "bg-white/10 text-white border-white/20" : "bg-gray-800/50 text-gray-300 border-gray-700/50 hover:border-gray-600/50")}
                 >
@@ -384,12 +434,10 @@
             </div>
           </div>
 
-          {/* Content */}
           <main className="p-6 md:p-8">
             <div className="max-w-7xl mx-auto">
               {active === 'dashboard' && (
                 <div className="space-y-8">
-                  {/* AI Status */}
                   <div className="bg-gradient-to-r from-purple-600/20 to-blue-600/20 backdrop-blur-sm border border-purple-500/30 rounded-2xl p-6 shadow-2xl">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
@@ -404,21 +452,17 @@
                             <span>Workshop AI Assistant</span>
                             <i data-lucide="sparkles" className="w-6 h-6 text-yellow-400"></i>
                           </h2>
-                          <p className="text-purple-300">System aktywny • Uczenie maszynowe włączone • Wersja 2.1</p>
+                          <p className="text-purple-300">System aktywny • Uczenie maszynowe włączone • Wersja 2.2</p>
                         </div>
                       </div>
                     </div>
                   </div>
-
-                  {/* Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatCard label="Diagnozy AI dzisiaj" value="147" change="+23%" icon="brain" />
                     <StatCard label="Automatyczne zamówienia" value="89" change="+45%" icon="zap" />
                     <StatCard label="Trafność predykcji" value="94.2%" change="+2.1%" icon="target" />
                     <StatCard label="Oszczędności AI" value="12,450 zł" change="+18%" icon="dollar-sign" />
                   </div>
-
-                  {/* Menu grid */}
                   <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 shadow-2xl">
                     <div className="flex items-center gap-3 mb-8">
                       <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg">
@@ -439,7 +483,7 @@
                         ['ai-reports','Raporty AI','Inteligentna analityka','bar-chart-3','from-violet-500 to-purple-500']
                       ].map(([id,label,desc,icon,grad]) => (
                         <button key={id}
-                          onClick={() => setActive(id.includes('vin') ? 'vin' : id.includes('orders') ? 'orders' : id.includes('ai-chat') ? 'ai-chat' : 'dashboard')}
+                          onClick={() => setActive(id.includes('vin') ? 'vin' : id.includes('orders') ? 'orders' : id.includes('ai-chat') ? 'ai-chat' : active)}
                           className={"group relative overflow-hidden bg-gradient-to-br " + grad + " p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 border-2 border-white/10 hover:border-white/20"}
                           title={label}
                         >
@@ -460,7 +504,6 @@
 
               {active === 'ai-chat' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-240px)]">
-                  {/* Chat */}
                   <div className="lg:col-span-2 bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl flex flex-col shadow-2xl">
                     <div className="p-6 border-b border-gray-700/50">
                       <div className="flex items-center gap-3">
@@ -478,7 +521,6 @@
                         </div>
                       </div>
                     </div>
-
                     <div className="flex-1 p-6 overflow-y-auto space-y-4">
                       <div className="flex items-start gap-3">
                         <div className="p-2 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex-shrink-0">
@@ -486,12 +528,7 @@
                         </div>
                         <div className="bg-gray-700/50 rounded-xl p-4 max-w-md">
                           <p className="text-white text-sm">
-                            Cześć! Jestem Twoim AI asystentem. Mogę pomóc z:<br/>
-                            • Wyszukiwaniem części po VIN<br/>
-                            • Zarządzaniem zamówieniami<br/>
-                            • Kontaktem z klientami<br/>
-                            • Analizą magazynu<br/>
-                            • Raportami sprzedaży
+                            Cześć! Jestem Twoim AI asystentem. Pomogę w VIN, zamówieniach, magazynie i raportach.
                           </p>
                         </div>
                       </div>
@@ -517,69 +554,40 @@
                       ))}
                       <div ref={chatEndRef}/>
                     </div>
-
                     <form onSubmit={(e)=>{ e.preventDefault(); sendMsg(msg); setMsg(''); }} className="p-6 border-t border-gray-700/50">
                       <div className="flex gap-4">
-                        <input
-                          type="text"
-                          value={msg}
-                          onChange={(e)=>setMsg(e.target.value)}
-                          placeholder="Zapytaj AI o części, zamówienia, klientów..."
-                          className="flex-1 px-4 py-3 bg-gray-700/50 border border-gray-600/50 focus:border-purple-500 rounded-xl text-white placeholder-gray-400 transition-all duration-300"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!msg.trim()}
-                          className="px-6 py-3 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-xl transition-all duration-300 inline-flex items-center gap-2"
-                        >
-                          <i data-lucide="send" className="w-5 h-5"></i>
-                          <span>Wyślij</span>
+                        <input type="text" value={msg} onChange={(e)=>setMsg(e.target.value)}
+                          placeholder="Zapytaj AI o części, zamówienia, klientów..." className="flex-1 px-4 py-3 bg-gray-700/50 border border-gray-600/50 focus:border-purple-500 rounded-xl text-white placeholder-gray-400 transition-all duration-300" />
+                        <button type="submit" disabled={!msg.trim()}
+                          className="px-6 py-3 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-xl transition-all duration-300 inline-flex items-center gap-2">
+                          <i data-lucide="send" className="w-5 h-5"></i><span>Wyślij</span>
                         </button>
                       </div>
                     </form>
                   </div>
-
-                  {/* Sidebar */}
                   <div className="space-y-6">
                     <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
                       <h4 className="text-lg font-bold text-white mb-4 inline-flex items-center gap-2">
-                        <i data-lucide="zap" className="w-5 h-5 text-yellow-400"></i>
-                        Szybkie pytania
+                        <i data-lucide="zap" className="w-5 h-5 text-yellow-400"></i> Szybkie pytania
                       </h4>
                       <div className="space-y-2">
                         {quick.map((q,i)=>(
-                          <button key={i}
-                            onClick={()=>sendMsg(q)}
-                            className="w-full text-left p-3 bg-gray-700/30 hover:bg-gray-600/50 rounded-lg text-sm text-gray-300 hover:text-white transition-all duration-300 border border-gray-600/30 hover:border-purple-500/50"
-                          >
+                          <button key={i} onClick={()=>sendMsg(q)}
+                            className="w-full text-left p-3 bg-gray-700/30 hover:bg-gray-600/50 rounded-lg text-sm text-gray-300 hover:text-white transition-all duration-300 border border-gray-600/30 hover:border-purple-500/50">
                             {q}
                           </button>
                         ))}
                       </div>
                     </div>
-
                     <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
                       <h4 className="text-lg font-bold text-white mb-4 inline-flex items-center gap-2">
-                        <i data-lucide="trending-up" className="w-5 h-5 text-green-400"></i>
-                        Dzisiejsze AI
+                        <i data-lucide="trending-up" className="w-5 h-5 text-green-400"></i> Dzisiejsze AI
                       </h4>
                       <div className="space-y-4 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Zapytania obsłużone</span>
-                          <span className="text-white font-semibold">234</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Zamówienia utworzone</span>
-                          <span className="text-white font-semibold">45</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Klienci obsłużeni</span>
-                          <span className="text-white font-semibold">67</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Średni czas odpowiedzi</span>
-                          <span className="text-green-400 font-semibold">1.2s</span>
-                        </div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Zapytania obsłużone</span><span className="text-white font-semibold">234</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Zamówienia utworzone</span><span className="text-white font-semibold">45</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Klienci obsłużeni</span><span className="text-white font-semibold">67</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Średni czas odpowiedzi</span><span className="text-green-400 font-semibold">1.2s</span></div>
                       </div>
                     </div>
                   </div>
@@ -598,17 +606,27 @@
                         <p className="text-gray-400">Pełna kontrola nad zamówieniami z AI</p>
                       </div>
                     </div>
-                    <button
-                      onClick={()=>{
-                        const id = 'ORD-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999)+1).padStart(3,'0');
-                        const o = { id, client:{name:'Nowy Klient',phone:'+48 ...'}, car:{brand:'',model:'',year:'',vin:''}, status:'pending', total:0, parts:[], createdAt: Date.now(), aiRecommendations:[] };
-                        setOrders([o, ...orders]);
-                      }}
-                      className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg"
-                    >
-                      <i data-lucide="plus" className="w-5 h-5"></i>
-                      Nowe zamówienie
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={()=>{
+                          const id = 'ORD-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999)+1).padStart(3,'0');
+                          const o = { id, client:{name:'Nowy Klient',phone:'+48 ...'}, car:{brand:'',model:'',year:'',vin:''},
+                            status:'pending', total:0, parts:[], createdAt: Date.now(), aiRecommendations:[] };
+                          setOrders([o, ...orders]);
+                        }}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg">
+                        <i data-lucide="plus" className="w-5 h-5"></i> Nowe zamówienie
+                      </button>
+                      <button onClick={exportJSON} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-600/20 text-gray-200 border border-gray-600/30 hover:bg-gray-600/30 transition">
+                        <i data-lucide="download" className="w-4 h-4"></i> Eksportuj JSON
+                      </button>
+                      <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-600/20 text-gray-200 border border-gray-600/30 hover:bg-gray-600/30 transition cursor-pointer">
+                        <i data-lucide="upload" className="w-4 h-4"></i> Importuj
+                        <input type="file" accept=".json,application/json" className="hidden" onChange={(e)=> e.target.files && importJSON(e.target.files[0])} />
+                      </label>
+                      <button onClick={()=>{ if (!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); }} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-600/20 text-gray-200 border border-gray-600/30 hover:bg-gray-600/30 transition">
+                        <i data-lucide="maximize-2" className="w-4 h-4"></i> Tryb kiosk
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -638,8 +656,7 @@
                                   order.status === 'processing' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
                                   'bg-green-500/20 text-green-400 border-green-500/30'
                                 )}>
-                                  {order.status === 'pending' ? 'Oczekuje' :
-                                   order.status === 'processing' ? 'Realizacja' : 'Gotowe'}
+                                  {order.status === 'pending' ? 'Oczekuje' : order.status === 'processing' ? 'Realizacja' : 'Gotowe'}
                                 </div>
                               </div>
                             </div>
@@ -675,7 +692,7 @@
                                 <div key={idx} className="flex justify-between items-center p-2 bg-gray-700/30 rounded-lg">
                                   <div>
                                     <p className="text-white text-sm font-medium">{p.name}</p>
-                                    <p className="text-gray-400 text-xs">{[p.code,p.supplier].filter(Boolean).join(' • ') || '\u00A0'}</p>
+                                    <p className="text-gray-400 text-xs">{[p.code,p.supplier].filter(Boolean).join(' • ') || '\\u00A0'}</p>
                                   </div>
                                   <div className="text-right">
                                     <p className="text-white font-semibold">{(p.qty||1)}x {p.price} zł</p>
@@ -692,29 +709,16 @@
                       <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
                         <h3 className="text-lg font-bold text-white mb-4">Statystyki zamówień</h3>
                         <div className="space-y-4">
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-400">Ten miesiąc</span>
-                            <span className="text-white font-semibold">345</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-400">Wartość miesięczna</span>
-                            <span className="text-green-400 font-semibold">128,450 zł</span>
-                          </div>
+                          <div className="flex justify-between items-center"><span className="text-gray-400">Ten miesiąc</span><span className="text-white font-semibold">345</span></div>
+                          <div className="flex justify-between items-center"><span className="text-gray-400">Wartość miesięczna</span><span className="text-green-400 font-semibold">128,450 zł</span></div>
                         </div>
                       </div>
-
                       <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
                         <h3 className="text-lg font-bold text-white mb-4">AI Insights</h3>
                         <div className="space-y-3">
-                          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                            <p className="text-blue-300 text-sm">🔮 Przewidywane zamówienia jutro: 15-18</p>
-                          </div>
-                          <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                            <p className="text-green-300 text-sm">💡 Najczęściej zamawiane: Filtry oleju</p>
-                          </div>
-                          <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                            <p className="text-orange-300 text-sm">⚡ Średni czas realizacji: 2.3h</p>
-                          </div>
+                          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg"><p className="text-blue-300 text-sm">🔮 Przewidywane zamówienia jutro: 15-18</p></div>
+                          <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg"><p className="text-green-300 text-sm">💡 Najczęściej zamawiane: Filtry oleju</p></div>
+                          <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg"><p className="text-orange-300 text-sm">⚡ Średni czas realizacji: 2.3h</p></div>
                         </div>
                       </div>
                     </div>
@@ -737,21 +741,25 @@
 
                     <div className="space-y-6">
                       <div className="relative max-w-2xl">
-                        <input
-                          type="text"
-                          placeholder="Wprowadź numer VIN lub zeskanuj kod..."
-                          className="w-full px-6 py-4 bg-gray-800/50 border-2 border-gray-600/50 focus:border-green-500 rounded-xl text-white placeholder-gray-400 text-lg tracking-widest transition-all duration-300"
-                          maxLength="17"
-                          value={vin}
-                          onChange={(e)=>setVin(e.target.value.toUpperCase())}
-                        />
+                        <input type="text" placeholder="Wprowadź numer VIN lub zeskanuj kod..." className="w-full px-6 py-4 bg-gray-800/50 border-2 border-gray-600/50 focus:border-green-500 rounded-xl text-white placeholder-gray-400 text-lg tracking-widest transition-all duration-300" maxLength="17" value={vin} onChange={(e)=>setVin(e.target.value.toUpperCase())} />
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-2">
                           <button onClick={onVIN} className="p-2 bg-green-500/20 hover:bg-green-500/30 rounded-lg transition-colors" title="Szukaj">
                             <i data-lucide="search" className="w-6 h-6 text-green-400"></i>
                           </button>
+                          <button onClick={startScan} className="p-2 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg transition-colors" title="Skanuj kod">
+                            <i data-lucide="scan-line" className="w-6 h-6 text-blue-400"></i>
+                          </button>
                         </div>
+                        {scanResult && <p className="text-gray-300 text-sm mt-2">Odczyt skanera: <span className="font-mono">{scanResult}</span></p>}
                         {vinError && <p className="text-red-300 text-sm mt-2">{vinError}</p>}
                       </div>
+
+                      {scanActive && (
+                        <div className="mt-4">
+                          <video ref={videoRef} playsInline className="rounded-xl border border-gray-700/50 max-w-full"></video>
+                          <p className="text-gray-400 text-xs mt-2">Skieruj aparat na kod kreskowy / QR.</p>
+                        </div>
+                      )}
 
                       {vinResult && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -777,12 +785,9 @@
                           <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 text-center">
                             <i data-lucide="target" className="w-12 h-12 text-green-400 mx-auto mb-4"></i>
                             <h4 className="text-lg font-semibold text-white mb-2">Działania</h4>
-                            <button
-                              onClick={()=>{
+                            <button onClick={()=>{
                                 const id = 'ORD-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999)+1).padStart(3,'0');
-                                const o = {
-                                  id,
-                                  client:{name:'Klient VIN', phone:'+48 ...'},
+                                const o = { id, client:{name:'Klient VIN', phone:'+48 ...'},
                                   car:{ brand: vinResult.brand, model: vinResult.model, year: vinResult.year, vin: vinResult.vin },
                                   status:'pending',
                                   total: vinResult.suggestedParts.reduce((s,p)=>s+p.price,0),
@@ -792,11 +797,8 @@
                                 };
                                 setOrders([o, ...orders]);
                                 setActive('orders');
-                              }}
-                              className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-green-500/20 text-green-200 border border-green-500/30 hover:bg-green-500/30 transition"
-                            >
-                              <i data-lucide="shopping-cart" className="w-4 h-4"></i>
-                              Utwórz zamówienie
+                              }} className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-green-500/20 text-green-200 border border-green-500/30 hover:bg-green-500/30 transition">
+                              <i data-lucide="shopping-cart" className="w-4 h-4"></i> Utwórz zamówienie
                             </button>
                           </div>
                         </div>
@@ -804,12 +806,10 @@
                     </div>
                   </div>
 
-                  {/* Recent VIN + Stats */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
                       <h3 className="text-lg font-bold text-white mb-4 inline-flex items-center gap-2">
-                        <i data-lucide="clock" className="w-5 h-5 text-blue-400"></i>
-                        Ostatnie analizy VIN
+                        <i data-lucide="clock" className="w-5 h-5 text-blue-400"></i> Ostatnie analizy VIN
                       </h3>
                       <div className="space-y-3">
                         {['WBA3A5G50ENS12345', 'WVWZZZ1JZYW123456', 'VF1BG4G0562123456'].map((v, i) => (
@@ -829,28 +829,37 @@
 
                     <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
                       <h3 className="text-lg font-bold text-white mb-4 inline-flex items-center gap-2">
-                        <i data-lucide="trending-up" className="w-5 h-5 text-green-400"></i>
-                        Statystyki AI
+                        <i data-lucide="trending-up" className="w-5 h-5 text-green-400"></i> Statystyki AI
                       </h3>
                       <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">VIN analizowanych dzisiaj</span>
-                          <span className="text-white font-semibold">147</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Średnia dokładność</span>
-                          <span className="text-green-400 font-semibold">98.7%</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Czas analizy</span>
-                          <span className="text-blue-400 font-semibold">1.2s</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400">Sukces identyfikacji</span>
-                          <span className="text-purple-400 font-semibold">99.1%</span>
-                        </div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">VIN analizowanych dzisiaj</span><span className="text-white font-semibold">147</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Średnia dokładność</span><span className="text-green-400 font-semibold">98.7%</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Czas analizy</span><span className="text-blue-400 font-semibold">1.2s</span></div>
+                        <div className="flex justify-between items-center"><span className="text-gray-400">Sukces identyfikacji</span><span className="text-purple-400 font-semibold">99.1%</span></div>
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {active === 'settings' && (
+                <div className="max-w-2xl space-y-6">
+                  <div className="bg-gray-800/60 border border-gray-700/60 rounded-2xl p-6 shadow-lg">
+                    <h2 className="text-xl font-bold text-white mb-4">Ustawienia — przypomnienia i godziny zamówień</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <label className="space-y-1 text-sm text-gray-300">
+                        <span className="block text-gray-400">Auto Partner — godzina graniczna</span>
+                        <input value={cfg.suppliers.autoPartner} onChange={e=>setCfg({...cfg, suppliers:{...cfg.suppliers, autoPartner:e.target.value}})} className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white" placeholder="11:00" />
+                      </label>
+                      <label className="space-y-1 text-sm text-gray-300">
+                        <span className="block text-gray-400">MekoNomen — godzina graniczna</span>
+                        <input value={cfg.suppliers.mekoNomen} onChange={e=>setCfg({...cfg, suppliers:{...cfg.suppliers, mekoNomen:e.target.value}})} className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white" placeholder="10:00" />
+                      </label>
+                    </div>
+                    <label className="inline-flex items-center gap-2 mt-4">
+                      <input type="checkbox" checked={cfg.reminders} onChange={(e)=>setCfg({...cfg, reminders: e.target.checked})} />
+                      <span className="text-gray-300 text-sm">Włącz przypomnienia 5 min przed</span>
+                    </label>
                   </div>
                 </div>
               )}
@@ -863,14 +872,5 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js').catch(console.error);
-      });
-    }
-  </script>
-
 </body>
 </html>
