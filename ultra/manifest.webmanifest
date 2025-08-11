@@ -1,5 +1,5 @@
 {
-  "name": "WAINEX — Workshop AI Assistant (Ultra)",
+  "name": "WAINEX — Workshop AI Assistant (Ultra-PL)",
   "short_name": "WAINEX",
   "start_url": ".",
   "display": "standalone",
@@ -8,13 +8,13 @@
   "scope": ".",
   "icons": [
     {
-      "src": "icons/icon-192.png",
+      "src": "ikony/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "ikony/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
