@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WAINEX — Workshop AI Assistant (Ultra)</title>
+  <meta name="theme-color" content="#0b1020">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://esm.sh">
+  <link rel="preconnect" href="https://cdn.tailwindcss.com">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { scrollbar-width: thin; scrollbar-color: #6b7280 transparent; }
+    *::-webkit-scrollbar { height: 8px; width: 8px; }
+    *::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 9999px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    html, body, #root { height: 100%; }
+    .toast { position: fixed; right: 16px; bottom: 16px; z-index: 9999; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-blue-900 antialiased selection:bg-purple-700/40 selection:text-white">
+  <div id="root" class="min-h-screen"></div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="./zxing-helper.js"></script>
+  <script type="module">
+    import { h, render } from 'https://esm.sh/preact@10.20.2';
+    import { useState, useEffect, useRef, useCallback } from 'https://esm.sh/preact@10.20.2/hooks';
+    import htm from 'https://esm.sh/htm@3.1.1'; const html = htm.bind(h);
+
+    const useToast = () => { const [toasts,setToasts]=useState([]); const push=useCallback((msg,type='info')=>{ const id=Date.now()+Math.random(); setToasts(t=>[...t,{id,msg,type}]); setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3500); },[]); const Toasts=()=> html`<div class="toast space-y-2">${toasts.map(t=> html`<div class=${"px-4 py-2 rounded-lg shadow border " + (t.type==='error'?"bg-red-500/20 border-red-500/40 text-red-100":t.type==='success'?"bg-green-500/20 border-green-500/40 text-green-100":"bg-gray-700/70 border-gray-600/50 text-gray-100")}>${t.msg}</div>`)}</div>`; return {push,Toasts}; };
+    const fmt = (v) => new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 2 }).format(v||0);
+
+    const createAgentWorker = () => { const code = `self.addEventListener('message', async (e) => {
+      const { type, payload, id } = e.data || {};
+      const respond = (data) => self.postMessage({ id, ...data });
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      if (type === 'VIN_ANALYZE') { await sleep(350 + Math.random()*300);
+        const vin=(payload?.vin||'').toUpperCase(); const ok=/^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
+        if(!ok) return respond({ type:'ERROR', error:'Nieprawidłowy VIN' });
+        const brands=['BMW','Audi','VW','Renault','Toyota','Skoda']; const models=['X5','A4','Golf','Clio','Corolla','Octavia'];
+        const year=2014+Math.floor(Math.random()*9); const brand=brands[Math.floor(Math.random()*brands.length)]; const model=models[Math.floor(Math.random()*models.length)];
+        respond({ type:'VIN_RESULT', result:{ vin, brand, model, year, confidence:(0.94+Math.random()*0.05).toFixed(3),
+          suggestedParts:[
+            { name:'Filtr oleju', code:'HU816x', supplier:'Mann Filter', price:45, qty:1 },
+            { name:'Klocki hamulcowe', code:'GDB1330', supplier:'Ferodo', price:280, qty:1 },
+            { name:'Amortyzator', code:'B46-1234', supplier:'Bilstein', price:420, qty:1 }
+          ] } });
+      }
+      if (type === 'ORDER_OPTIMIZE') { await sleep(400 + Math.random()*300);
+        const parts=payload?.parts||[]; const suppliers=['Auto Partner','MekoNomen','Inter Cars','Interteam','Motogame'];
+        const best=parts.map(p=>({ ...p, supplier:suppliers[Math.floor(Math.random()*suppliers.length)], price:Math.max(1, Math.round((p.price||0)*(0.9+Math.random()*0.2))), deliveryEtaHours:1+Math.floor(Math.random()*4)}));
+        respond({ type:'ORDER_PLAN', result:{ parts:best, savings:Math.round(Math.random()*120) } });
+      }
+      if (type === 'CHAT') { await sleep(250 + Math.random()*250);
+        const msg=(payload?.text||'').toLowerCase();
+        if (msg.includes('vin')||msg.includes('części')) return respond({ type:'CHAT_REPLY', text:'Znalazłem części do VIN. Utworzyć zamówienie czy porównać dostawców?' });
+        if (msg.includes('zamów')) return respond({ type:'CHAT_REPLY', text:'Tworzę szkic zamówienia… gotowe. Potwierdzić wysyłkę?' });
+        if (msg.includes('magazyn')||msg.includes('stan')) return respond({ type:'CHAT_REPLY', text:'Magazyn: 1247 dostępnych, 23 niskie stany, 5 braków. Uzupełnić?' });
+        return respond({ type:'CHAT_REPLY', text:'Gotów. Zapytaj o VIN, zamówienia lub magazyn.' });
+      }
+    });`; const blob = new Blob([code], {type:'application/javascript'}); return new Worker(URL.createObjectURL(blob)); };
+    const useAgent=()=>{ const w=useRef(null); const idRef=useRef(0); const cbs=useRef(new Map()); useEffect(()=>{ w.current=createAgentWorker(); const onMsg=e=>{ const {id,...rest}=e.data||{}; const cb=cbs.current.get(id); if(cb){ cbs.current.delete(id); cb(rest);} }; w.current.addEventListener('message',onMsg); return ()=>{ w.current.removeEventListener('message',onMsg); w.current.terminate(); }; },[]); const call=(type,payload)=> new Promise(res=>{ const id=++idRef.current; cbs.current.set(id,res); w.current.postMessage({id,type,payload}); }); return { analyzeVIN:(vin)=>call('VIN_ANALYZE',{vin}), optimizeOrder:(parts)=>call('ORDER_OPTIMIZE',{parts}), chat:(text)=>call('CHAT',{text}) }; };
+
+    const OrdersView = (props) => import('./view-orders.js').then(m => h(m.default, props));
+    const VinView    = (props) => import('./view-vin.js').then(m => h(m.default, props));
+    const ChatView   = (props) => import('./view-chat.js').then(m => h(m.default, props));
+
+    const App = () => {
+      const agent = useAgent();
+      const { push, Toasts } = useToast();
+      const [active,setActive]=useState('dashboard');
+      useEffect(()=>{ lucide.createIcons(); },[active]);
+      return html`<div class="min-h-screen backdrop-blur-sm">
+        <${Toasts}/>
+        <header class="bg-gray-900/80 backdrop-blur-sm border-b border-gray-700/50 px-6 py-4 shadow-lg sticky top-0 z-40">
+          <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <div class="relative"><div class="p-2 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl shadow-lg"><i data-lucide="bot" class="w-7 h-7 text-white"></i></div><div class="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse border-2 border-gray-900"></div></div>
+              <div><h1 class="text-2xl font-bold text-white tracking-tight">WAINEX — Ultra (Preact)</h1></div>
+            </div>
+          </div>
+        </header>
+        <main class="p-6 md:p-8">
+          <div class="max-w-7xl mx-auto flex gap-2 mb-6">
+            ${[['dashboard','Pulpit','sparkles'],['orders','Zamówienia','shopping-cart'],['vin','Analiza VIN','search'],['ai','AI Chat','message-square']].map(([id,label,icon])=> html`
+              <button class=${"inline-flex items-center gap-2 px-4 py-2 rounded-xl border transition-all " + (active===id ? "bg-white/10 text-white border-white/20" : "bg-gray-800/50 text-gray-300 border-gray-700/50 hover:border-gray-600/50")} onClick=${()=>setActive(id)}>
+                <i data-lucide=${icon} class="w-4 h-4"></i><span class="text-sm">${label}</span>
+              </button>`)
+            }
+          </div>
+          <div class="max-w-7xl mx-auto">
+            ${active==='dashboard' && html`<div class="bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-2xl p-6 shadow-2xl"><h2 class="text-xl text-white font-semibold">Gotowe. Wersja Ultra działa.</h2><p class="text-gray-300 text-sm mt-1">Sprawdź zakładki powyżej.</p></div>`}
+            ${active==='orders' && html`<${OrdersView} agent=${agent} push=${push} />`}
+            ${active==='vin' && html`<${VinView} agent=${agent} />`}
+            ${active==='ai' && html`<${ChatView} agent=${agent} />`}
+          </div>
+        </main>
+      </div>`;
+    };
+    render(h(App, {}), document.getElementById('root'));
+  </script>
+</body>
+</html>
